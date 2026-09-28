@@ -9,6 +9,7 @@ import os
 import io
 import asyncio
 from datetime import timedelta, date
+from aiohttp import web
 
 # =========================
 # ⚙️ الإعدادات
@@ -31,6 +32,24 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 spam = {}
 mrbeast_room = None
+
+
+# =========================
+# 🌐 نظام الويب (Web Server) للـ Keep-Alive
+# =========================
+async def handle_web_request(request):
+    return web.Response(text="Bot is Alive & Running 24/7! 🚀", content_type="text/plain")
+
+async def start_web_server():
+    app = web.Application()
+    app.router.add_get('/', handle_web_request)
+    app.router.add_get('/health', handle_web_request)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 Web server running on port {port}")
 
 
 # =========================
@@ -402,6 +421,65 @@ async def clear_warnings(interaction: discord.Interaction, member: discord.Membe
     warnings_db.pop(str(member.id), None)
     save_json(WARN_FILE, warnings_db)
     await interaction.response.send_message(f"✅ تم مسح تحذيرات {member.mention}")
+
+
+# =========================
+# 🆕 أوامر إدارية جديدة
+# =========================
+@bot.tree.command(name="add_role", description="إضافة رول لعضو معين")
+@is_allowed_role()
+@app_commands.describe(member="العضو", role="الرول المراد إضافته")
+async def add_role(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
+    try:
+        await member.add_roles(role)
+        await interaction.response.send_message(f"✅ تم إعطاء الرول {role.mention} لـ {member.mention}")
+    except Exception as e:
+        await interaction.response.send_message(f"❌ تعذر إضافة الرول: `{e}`", ephemeral=True)
+
+
+@bot.tree.command(name="remove_role", description="إزالة رول من عضو معين")
+@is_allowed_role()
+@app_commands.describe(member="العضو", role="الرول المراد إزالته")
+async def remove_role(interaction: discord.Interaction, member: discord.Member, role: discord.Role):
+    try:
+        await member.remove_roles(role)
+        await interaction.response.send_message(f"✅ تم إزالة الرول {role.mention} من {member.mention}")
+    except Exception as e:
+        await interaction.response.send_message(f"❌ تعذر إزالة الرول: `{e}`", ephemeral=True)
+
+
+@bot.tree.command(name="lock", description="قفل الروم الحالي")
+@is_allowed_role()
+async def lock_channel(interaction: discord.Interaction):
+    await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=False)
+    await interaction.response.send_message("🔒 تم قفل الروم بنجاح.")
+
+
+@bot.tree.command(name="unlock", description="فتح الروم الحالي")
+@is_allowed_role()
+async def unlock_channel(interaction: discord.Interaction):
+    await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=True)
+    await interaction.response.send_message("🔓 تم فتح الروم بنجاح.")
+
+
+@bot.tree.command(name="add_money", description="إضافة رصيد مال لعضو معين")
+@is_allowed_role()
+@app_commands.describe(member="العضو", amount="المبلغ")
+async def add_money(interaction: discord.Interaction, member: discord.Member, amount: app_commands.Range[int, 1, None]):
+    user = get_user(member.id)
+    user["balance"] += amount
+    save_json(DATA_FILE, money)
+    await interaction.response.send_message(f"💵 تم إضافة `{amount}` عملة لـ {member.mention}. رصيده الجديد: `{user['balance']}`")
+
+
+@bot.tree.command(name="remove_money", description="خصم رصيد مال من عضو معين")
+@is_allowed_role()
+@app_commands.describe(member="العضو", amount="المبلغ")
+async def remove_money(interaction: discord.Interaction, member: discord.Member, amount: app_commands.Range[int, 1, None]):
+    user = get_user(member.id)
+    user["balance"] = max(0, user["balance"] - amount)
+    save_json(DATA_FILE, money)
+    await interaction.response.send_message(f"💸 تم خصم `{amount}` عملة من {member.mention}. رصيده الجديد: `{user['balance']}`")
 
 
 # =========================
@@ -1002,7 +1080,7 @@ async def help_cmd(interaction: discord.Interaction):
         name=f"🔨 الإدارة (رول {ALLOWED_ROLE_NAME} فقط)",
         value="`/kick` `/ban` `/unban` `/mute` `/unmute` `/warn` `/warnings` `/clear_warnings`\n"
               "`/clear` `/clear_images` `/clear_user` `/clr` `/noformrbeast` `/remove_banroom`\n"
-              "`/say` `/say_embed` `/script`",
+              "`/say` `/say_embed` `/script` `/add_role` `/remove_role` `/lock` `/unlock` `/add_money` `/remove_money`",
         inline=False,
     )
     embed.add_field(
@@ -1030,6 +1108,8 @@ async def help_cmd(interaction: discord.Interaction):
 
 
 # =========================
+# 🚀 بداية تشغيل البوت مع الويب
+# =========================
 @bot.event
 async def on_ready():
     print(f"🔥 تم تسجيل الدخول باسم {bot.user}")
@@ -1037,5 +1117,11 @@ async def on_ready():
     bot.add_view(TicketControlView())
     await bot.tree.sync()
 
+async def main():
+    async with bot:
+        await start_web_server()
+        await bot.start(TOKEN)
 
-bot.run(TOKEN)
+if __name__ == "__main__":
+    asyncio.run(main())
+
