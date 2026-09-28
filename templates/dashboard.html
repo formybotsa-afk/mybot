@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة التحكم بالبوت</title>
+    <style>
+        * { box-sizing: border-box; font-family: sans-serif; }
+        body { background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #334155; padding-bottom: 1rem; margin-bottom: 2rem; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 2rem; }
+        .stat-card { background: #1e293b; padding: 1.5rem; border-radius: 10px; border-right: 4px solid #38bdf8; text-align: center; }
+        .stat-card h3 { margin: 0; color: #94a3b8; font-size: 0.9rem; }
+        .stat-card p { margin: 10px 0 0 0; font-size: 1.8rem; font-weight: bold; }
+        .section { background: #1e293b; padding: 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; }
+        .section h2 { margin-top: 0; color: #38bdf8; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
+        form { display: grid; gap: 10px; max-width: 500px; }
+        input, select, textarea { padding: 0.6rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; }
+        button { padding: 0.75rem; border: none; border-radius: 6px; background: #0284c7; color: white; cursor: pointer; font-weight: bold; }
+        .logout { color: #f87171; text-decoration: none; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎮 لوحة تحكم البوت</h1>
+        <a href="/logout" class="logout">تسجيل الخروج 🚪</a>
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <h3>الحالة</h3>
+            <p style="color: #4ade80;">متصل 🟢</p>
+        </div>
+        <div class="stat-card">
+            <h3>عدد السيرفرات</h3>
+            <p>{{ stats.guilds }}</p>
+        </div>
+        <div class="stat-card">
+            <h3>إجمالي الأعضاء</h3>
+            <p>{{ stats.users }}</p>
+        </div>
+        <div class="stat-card">
+            <h3>سرعة الاستجابة</h3>
+            <p>{{ stats.ping }} ms</p>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📢 إرسال رسالة لروم معين</h2>
+        <form method="POST" action="/api/send_message">
+            <label>اختر الروم:</label>
+            <select name="channel_id" required>
+                {% for channel in channels %}
+                <option value="{{ channel.id }}">#{{ channel.name }} ({{ channel.guild }})</option>
+                {% endfor %}
+            </select>
+            <label>نص الرسالة:</label>
+            <textarea name="message" rows="3" placeholder="اكتب الرسالة هنا..." required></textarea>
+            <button type="submit">إرسال الرسالة 🚀</button>
+        </form>
+    </div>
+
+    <div class="section">
+        <h2>💰 إدارة رصيد عضو</h2>
+        <form method="POST" action="/api/modify_balance">
+            <label>آيدي العضو (User ID):</label>
+            <input type="text" name="user_id" placeholder="مثال: 123456789012345678" required>
+            <label>المبلغ:</label>
+            <input type="number" name="amount" placeholder="500" required>
+            <label>الإجراء:</label>
+            <select name="action">
+                <option value="add">إضافة رصيد ➕</option>
+                <option value="remove">خصم رصيد ➖</option>
+            </select>
+            <button type="submit">تحديث الرصيد 💵</button>
+        </form>
+    </div>
+</body>
+</html>
