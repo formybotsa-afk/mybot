@@ -8,6 +8,8 @@ import json
 import os
 import io
 import asyncio
+import re
+import unicodedata
 from datetime import timedelta, date
 import jinja2
 import aiohttp_jinja2
@@ -24,6 +26,7 @@ DATA_FILE = "economy.json"
 WARN_FILE = "warnings.json"
 TICKET_CONFIG_FILE = "ticket_config.json"
 TICKET_DATA_FILE = "tickets.json"
+AUTO_SCRIPTS_FILE = "auto_scripts.json"  # ملف السكربتات التلقائية
 
 DAILY_AMOUNT = 100
 ALLOWED_ROLE_NAME = "__  SA | ALONE   __"
@@ -57,6 +60,22 @@ ticket_config = load_json(TICKET_CONFIG_FILE)
 if not ticket_config:
     ticket_config = {"category_id": None, "support_role_id": None, "log_channel_id": None, "counter": 0}
 tickets_db = load_json(TICKET_DATA_FILE)
+auto_scripts_db = load_json(AUTO_SCRIPTS_FILE)  # قائمة السكربتات التلقائية
+
+
+# =========================
+# 🧹 تنظيف النصوص والزخارف
+# =========================
+def normalize_text(text: str) -> str:
+    # إزالة التشكيل والزخارف وتوحيد حروف العربي (أ/إ/آ -> ا)
+    text = unicodedata.normalize('NFD', text)
+    text = re.sub(r'[\u0300-\u036f]', '', text)
+    text = re.sub(r'[أإآ]', 'ا', text)
+    text = re.sub(r'[ة]', 'ه', text)
+    text = re.sub(r'[ى]', 'ي', text)
+    # إزالة الأرقام والرموز والمسافات الزائدة
+    text = re.sub(r'[^a-zA-Z0-9\u0621-\u064A]', '', text)
+    return text.lower()
 
 
 def is_ticket_staff(member: discord.Member) -> bool:
@@ -133,7 +152,8 @@ async def http_dashboard(request):
 
     return aiohttp_jinja2.render_template('dashboard.html', request, {
         'stats': stats,
-        'channels': channels
+        'channels': channels,
+        'auto_scripts': auto_scripts_db
     })
 
 async def api_send_message(request):
@@ -166,6 +186,42 @@ async def api_modify_balance(request):
     save_json(DATA_FILE, money)
     return web.Response(text="<script>alert('تم تحديث رصيد العضو بنجاح!'); window.location.href='/dashboard';</script>", content_type="text/html")
 
+# API إدارة السكربتات التلقائية
+async def api_add_auto_script(request):
+    if not check_auth(request):
+        return web.HTTPUnauthorized()
+    data = await request.post()
+    
+    title = data.get("title", "").strip()
+    keywords = [k.strip() for k in data.get("keywords", "").split(",") if k.strip()]
+    mobile_script = data.get("mobile_script", "").strip()
+    pc_script = data.get("pc_script", "").strip()
+
+    if not title or not keywords or not (mobile_script or pc_script):
+        return web.Response(text="<script>alert('يرجى تعبئة جميع الحقول بشكل صحيح'); window.location.href='/dashboard';</script>", content_type="text/html")
+
+    script_id = str(int(time.time()))
+    auto_scripts_db[script_id] = {
+        "title": title,
+        "keywords": keywords,
+        "mobile_script": mobile_script,
+        "pc_script": pc_script
+    }
+    save_json(AUTO_SCRIPTS_FILE, auto_scripts_db)
+    return web.Response(text="<script>alert('تم إضافة رد السكربت التلقائي بنجاح!'); window.location.href='/dashboard';</script>", content_type="text/html")
+
+async def api_delete_auto_script(request):
+    if not check_auth(request):
+        return web.HTTPUnauthorized()
+    data = await request.post()
+    script_id = data.get("script_id")
+    
+    if script_id in auto_scripts_db:
+        del auto_scripts_db[script_id]
+        save_json(AUTO_SCRIPTS_FILE, auto_scripts_db)
+        return web.Response(text="<script>alert('تم حذف السكربت التلقائي!'); window.location.href='/dashboard';</script>", content_type="text/html")
+    return web.Response(text="<script>alert('السكربت غير موجود'); window.location.href='/dashboard';</script>", content_type="text/html")
+
 async def start_web_server():
     app = web.Application()
     aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(os.path.join(os.path.dirname(__file__), 'templates')))
@@ -178,6 +234,8 @@ async def start_web_server():
     
     app.router.add_post('/api/send_message', api_send_message)
     app.router.add_post('/api/modify_balance', api_modify_balance)
+    app.router.add_post('/api/add_auto_script', api_add_auto_script)
+    app.router.add_post('/api/delete_auto_script', api_delete_auto_script)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -188,8 +246,29 @@ async def start_web_server():
 
 
 # =========================
-# 🧠 الأحداث ومكافحة السبام
+# 🧠 الأحداث ومكافحة السبام والردود التلقائية
 # =========================
+class AutoScriptButtons(View):
+    def __init__(self, mobile_script: str, pc_script: str):
+        super().__init__(timeout=None)
+        self.mobile_script = mobile_script
+        self.pc_script = pc_script
+
+    @discord.ui.button(label="هاتف 📱", style=discord.ButtonStyle.success)
+    async def mobile_button(self, interaction: discord.Interaction, button: Button):
+        if not self.mobile_script:
+            await interaction.response.send_message("❌ لا يوجد كود مخصص للهاتف لهذا السكربت.", ephemeral=True)
+            return
+        await interaction.response.send_message(f"`{self.mobile_script}`", ephemeral=True)
+
+    @discord.ui.button(label="لاب توب 💻", style=discord.ButtonStyle.primary)
+    async def pc_button(self, interaction: discord.Interaction, button: Button):
+        if not self.pc_script:
+            await interaction.response.send_message("❌ لا يوجد كود مخصص للاب توب لهذا السكربت.", ephemeral=True)
+            return
+        await interaction.response.send_message(f"```{self.pc_script}```", ephemeral=True)
+
+
 @bot.event
 async def on_message(message: discord.Message):
     global mrbeast_room
@@ -197,6 +276,7 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
+    # فحص روم الباند
     if mrbeast_room and message.channel.id == mrbeast_room:
         try:
             await message.delete()
@@ -208,9 +288,9 @@ async def on_message(message: discord.Message):
             pass
         return
 
+    # نظام السبام
     uid = message.author.id
     now = time.time()
-
     spam.setdefault(uid, []).append(now)
     spam[uid] = [t for t in spam[uid] if now - t < 5]
 
@@ -220,6 +300,30 @@ async def on_message(message: discord.Message):
         except Exception:
             pass
         spam[uid] = []
+
+    # 🤖 نظام الرد التلقائي الشامل والذكي للسكربتات
+    clean_msg = normalize_text(message.content)
+
+    if clean_msg:
+        for sid, sdata in auto_scripts_db.items():
+            for kw in sdata.get("keywords", []):
+                clean_kw = normalize_text(kw)
+                # التأكد من وجود الكلمة المفتاحية داخل الرسالة
+                if clean_kw and clean_kw in clean_msg:
+                    embed = discord.Embed(
+                        title=f"✨ {sdata['title']}",
+                        description=(
+                            f"أهلاً بك {message.author.mention} 👋✨\n\n"
+                            "اختر نوع جهازك من الأزرار في الأسفل لاستلام السكربت 🚀"
+                        ),
+                        color=0x00FFCD
+                    )
+                    embed.set_thumbnail(url=message.author.display_avatar.url)
+                    embed.set_footer(text="🤖 نظام السكربتات التلقائي", icon_url=bot.user.display_avatar.url)
+                    
+                    view = AutoScriptButtons(sdata.get("mobile_script", ""), sdata.get("pc_script", ""))
+                    await message.reply(embed=embed, view=view)
+                    return
 
     await bot.process_commands(message)
 
@@ -279,7 +383,7 @@ async def say_embed(interaction: discord.Interaction, title: str, desc: str):
 
 
 # =========================
-# 📜 نظام السكربتات
+# 📜 نظام السكربتات اليدوي
 # =========================
 class CopyButtons(View):
     def __init__(self, script_text):
