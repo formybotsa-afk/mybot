@@ -1,7 +1,7 @@
 node_modules/
+.env
 economy.json
 warnings.json
-script_responses.json
 ticket_config.json
 tickets.json
-.env
+triggers.json
