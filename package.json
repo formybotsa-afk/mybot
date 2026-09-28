@@ -1,0 +1,14 @@
+{
+  "name": "discord-bot-passkey-dashboard",
+  "version": "1.0.0",
+  "description": "Discord Bot with Web Dashboard, WebAuthn Passkey, and Live Code Editor",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@simplewebauthn/browser": "^10.0.0",
+    "@simplewebauthn/server": "^10.0.0",
+    "express": "^4.19.2"
+  }
+}
