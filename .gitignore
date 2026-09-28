@@ -1,0 +1,7 @@
+node_modules/
+economy.json
+warnings.json
+script_responses.json
+ticket_config.json
+tickets.json
+.env
