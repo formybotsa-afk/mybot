@@ -1,3 +1,4 @@
+
 import os
 import asyncio
 from bot import bot, TOKEN, start_web_server
@@ -8,7 +9,7 @@ async def runner():
         return
 
     async with bot:
-        # تشغيل سيرفر الويب لضمان بقاء البوت حياً (Keep-Alive)
+        # تشغيل سيرفر لوحة التحكم والويب في الخلفية
         await start_web_server()
         # تشغيل بوت ديسكورد
         await bot.start(TOKEN)
