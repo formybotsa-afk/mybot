@@ -9,19 +9,23 @@ import os
 import io
 import asyncio
 from datetime import timedelta, date
+import jinja2
+import aiohttp_jinja2
 from aiohttp import web
 
 # =========================
-# ⚙️ الإعدادات
+# ⚙️ الإعدادات والمتغيرات
 # =========================
-# ضع التوكن في متغير بيئة باسم DISCORD_TOKEN بدل كتابته هنا (أأمن بكثير)
 TOKEN = os.getenv("dsct")
+DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "admin123")
+SESSION_SECRET = os.urandom(16).hex()
 
 DATA_FILE = "economy.json"
 WARN_FILE = "warnings.json"
-DAILY_AMOUNT = 100
+TICKET_CONFIG_FILE = "ticket_config.json"
+TICKET_DATA_FILE = "tickets.json"
 
-# الرول المسموح له وحده باستخدام الأوامر الخطرة و /script
+DAILY_AMOUNT = 100
 ALLOWED_ROLE_NAME = "__  SA | ALONE   __"
 
 intents = discord.Intents.default()
@@ -35,24 +39,6 @@ mrbeast_room = None
 
 
 # =========================
-# 🌐 نظام الويب (Web Server) للـ Keep-Alive
-# =========================
-async def handle_web_request(request):
-    return web.Response(text="Bot is Alive & Running 24/7! 🚀", content_type="text/plain")
-
-async def start_web_server():
-    app = web.Application()
-    app.router.add_get('/', handle_web_request)
-    app.router.add_get('/health', handle_web_request)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    port = int(os.getenv("PORT", 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"🌐 Web server running on port {port}")
-
-
-# =========================
 # 💾 حفظ وتحميل البيانات
 # =========================
 def load_json(path):
@@ -61,23 +47,16 @@ def load_json(path):
             return json.load(f)
     return {}
 
-
 def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-
-money = load_json(DATA_FILE)          # { "user_id": {"balance": 0, "last_daily_date": "2026-07-11"} }
-warnings_db = load_json(WARN_FILE)     # { "user_id": ["سبب1", "سبب2"] }
-
-TICKET_CONFIG_FILE = "ticket_config.json"
-TICKET_DATA_FILE = "tickets.json"
-
+money = load_json(DATA_FILE)
+warnings_db = load_json(WARN_FILE)
 ticket_config = load_json(TICKET_CONFIG_FILE)
 if not ticket_config:
     ticket_config = {"category_id": None, "support_role_id": None, "log_channel_id": None, "counter": 0}
-
-tickets_db = load_json(TICKET_DATA_FILE)   # { "channel_id": {"owner_id","claimed_by","category","number","status"} }
+tickets_db = load_json(TICKET_DATA_FILE)
 
 
 def is_ticket_staff(member: discord.Member) -> bool:
@@ -88,7 +67,6 @@ def is_ticket_staff(member: discord.Member) -> bool:
         return True
     return False
 
-
 def get_user(uid: int):
     uid = str(uid)
     if uid not in money:
@@ -97,11 +75,10 @@ def get_user(uid: int):
 
 
 # =========================
-# 🔐 فحص الرول المسموح له بالأوامر الخطرة
+# 🔐 فحص الرول المسموح
 # =========================
 class NotAllowedRole(app_commands.CheckFailure):
     pass
-
 
 def is_allowed_role():
     async def predicate(interaction: discord.Interaction) -> bool:
@@ -114,7 +91,104 @@ def is_allowed_role():
 
 
 # =========================
-# 🧠 مضاد سبام + روم الباند
+# 🌐 لوحة التحكم وسيرفر الويب (Dashboard & Web Server)
+# =========================
+def check_auth(request):
+    cookies = request.cookies
+    return cookies.get("auth_session") == SESSION_SECRET
+
+async def http_login_page(request):
+    if check_auth(request):
+        return web.HTTPFound('/dashboard')
+    return aiohttp_jinja2.render_template('login.html', request, {})
+
+async def http_login_submit(request):
+    data = await request.post()
+    password = data.get("password")
+    if password == DASHBOARD_PASSWORD:
+        response = web.HTTPFound('/dashboard')
+        response.set_cookie('auth_session', SESSION_SECRET, max_age=3600*24)
+        return response
+    return aiohttp_jinja2.render_template('login.html', request, {'error': 'كلمة السر غير صحيحة!'})
+
+async def http_logout(request):
+    response = web.HTTPFound('/login')
+    response.del_cookie('auth_session')
+    return response
+
+async def http_dashboard(request):
+    if not check_auth(request):
+        return web.HTTPFound('/login')
+
+    stats = {
+        "guilds": len(bot.guilds),
+        "users": sum(g.member_count for g in bot.guilds),
+        "ping": round(bot.latency * 1000) if bot.latency else 0
+    }
+
+    channels = []
+    for guild in bot.guilds:
+        for ch in guild.text_channels:
+            channels.append({"id": str(ch.id), "name": ch.name, "guild": guild.name})
+
+    return aiohttp_jinja2.render_template('dashboard.html', request, {
+        'stats': stats,
+        'channels': channels
+    })
+
+async def api_send_message(request):
+    if not check_auth(request):
+        return web.HTTPUnauthorized()
+    data = await request.post()
+    channel_id = int(data.get("channel_id"))
+    msg = data.get("message")
+    
+    channel = bot.get_channel(channel_id)
+    if channel:
+        await channel.send(msg)
+        return web.Response(text="<script>alert('تم إرسال الرسالة بنجاح!'); window.location.href='/dashboard';</script>", content_type="text/html")
+    return web.Response(text="<script>alert('تعذر العثور على الروم'); window.location.href='/dashboard';</script>", content_type="text/html")
+
+async def api_modify_balance(request):
+    if not check_auth(request):
+        return web.HTTPUnauthorized()
+    data = await request.post()
+    uid = str(data.get("user_id")).strip()
+    amount = int(data.get("amount", 0))
+    action = data.get("action")
+
+    user_data = get_user(uid)
+    if action == "add":
+        user_data["balance"] += amount
+    else:
+        user_data["balance"] = max(0, user_data["balance"] - amount)
+    
+    save_json(DATA_FILE, money)
+    return web.Response(text="<script>alert('تم تحديث رصيد العضو بنجاح!'); window.location.href='/dashboard';</script>", content_type="text/html")
+
+async def start_web_server():
+    app = web.Application()
+    aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(os.path.join(os.path.dirname(__file__), 'templates')))
+
+    app.router.add_get('/', lambda r: web.HTTPFound('/dashboard'))
+    app.router.add_get('/login', http_login_page)
+    app.router.add_post('/login', http_login_submit)
+    app.router.add_get('/logout', http_logout)
+    app.router.add_get('/dashboard', http_dashboard)
+    
+    app.router.add_post('/api/send_message', api_send_message)
+    app.router.add_post('/api/modify_balance', api_modify_balance)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"🌐 Dashboard Web Server running on port {port}")
+
+
+# =========================
+# 🧠 الأحداث ومكافحة السبام
 # =========================
 @bot.event
 async def on_message(message: discord.Message):
@@ -123,7 +197,6 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
-    # 🚫 روم الباند - أي رسالة فيه = باند
     if mrbeast_room and message.channel.id == mrbeast_room:
         try:
             await message.delete()
@@ -135,7 +208,6 @@ async def on_message(message: discord.Message):
             pass
         return
 
-    # 🧠 نظام مكافحة السبام
     uid = message.author.id
     now = time.time()
 
@@ -152,16 +224,11 @@ async def on_message(message: discord.Message):
     await bot.process_commands(message)
 
 
-# =========================
-# ⚠️ معالج أخطاء الأوامر (صلاحيات ناقصة إلخ)
-# =========================
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    # لو الخطأ الأصلي كان بسبب انتهاء صلاحية الـ interaction (تأخر شبكة)
-    # ما نحاول نرد عليها مرة ثانية عشان ما يصير خطأ فوق خطأ
     original = getattr(error, "original", None)
     if isinstance(error, discord.NotFound) or isinstance(original, discord.NotFound):
-        print(f"⚠️ Interaction انتهت قبل ما نقدر نرد عليها (تأخر شبكة/سيرفر). تجاهلناها بأمان.")
+        print("⚠️ Interaction انتهت قبل الرد، تم التجاهل بأمان.")
         return
 
     if isinstance(error, NotAllowedRole):
@@ -180,14 +247,12 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
             await interaction.followup.send(msg, ephemeral=True)
         else:
             await interaction.response.send_message(msg, ephemeral=True)
-    except discord.NotFound:
-        print("⚠️ Interaction انتهت أثناء محاولة إرسال رسالة الخطأ. تجاهلناها بأمان.")
     except Exception as e:
-        print(f"⚠️ فشل إرسال رسالة الخطأ: {e}")
+        print(f"⚠️ فشل إرسال الخطأ: {e}")
 
 
 # =========================
-# 📋 SAY
+# 📋 SAY & SAY_EMBED
 # =========================
 class SayView(View):
     def __init__(self, text):
@@ -200,16 +265,11 @@ class SayView(View):
         btn.callback = copy
         self.add_item(btn)
 
-
 @bot.tree.command(name="say", description="يخلي البوت يرسل رسالة")
 @is_allowed_role()
 async def say(interaction: discord.Interaction, text: str, hidden: bool = False):
     await interaction.response.send_message(text, view=SayView(text), ephemeral=hidden)
 
-
-# =========================
-# ✨ SAY EMBED
-# =========================
 @bot.tree.command(name="say_embed", description="يرسل embed مخصص")
 @is_allowed_role()
 async def say_embed(interaction: discord.Interaction, title: str, desc: str):
@@ -224,7 +284,6 @@ async def say_embed(interaction: discord.Interaction, title: str, desc: str):
 class CopyButtons(View):
     def __init__(self, script_text):
         super().__init__(timeout=None)
-
         m = Button(label="📱 نسخ للجوال", style=discord.ButtonStyle.green)
         pc = Button(label="💻 نسخ للبي سي", style=discord.ButtonStyle.blurple)
 
@@ -240,23 +299,19 @@ class CopyButtons(View):
         self.add_item(m)
         self.add_item(pc)
 
-
 class ScriptModal(discord.ui.Modal, title="إنشاء سكربت"):
     map_name = discord.ui.TextInput(label="🎮 اسم الماب")
     script_input = discord.ui.TextInput(label="📜 السكربت", style=discord.TextStyle.paragraph)
 
     async def on_submit(self, interaction: discord.Interaction):
         server = interaction.guild.name if interaction.guild else "Server"
-
         embed = discord.Embed(title=f"🎮 سكربت ماب: {self.map_name.value}", color=0x00FF99)
         embed.description = (
             f"📱 **نسخ للجوال**\n`{self.script_input.value}`\n\n"
             f"💻 **نسخ للبي سي**\n```{self.script_input.value}```"
         )
         embed.set_footer(text=f"© {server}")
-
         await interaction.response.send_message(embed=embed, view=CopyButtons(self.script_input.value))
-
 
 class OpenModal(View):
     def __init__(self):
@@ -269,7 +324,6 @@ class OpenModal(View):
         btn.callback = open_modal
         self.add_item(btn)
 
-
 @bot.tree.command(name="script", description="نظام إنشاء ومشاركة السكربتات")
 @is_allowed_role()
 async def script_cmd(interaction: discord.Interaction):
@@ -278,7 +332,7 @@ async def script_cmd(interaction: discord.Interaction):
 
 
 # =========================
-# 🧹 تنظيف الرسائل
+# 🧹 تنظيف الرسائل والرومات
 # =========================
 @bot.tree.command(name="clear", description="يحذف عدد معين من الرسائل")
 @is_allowed_role()
@@ -288,14 +342,12 @@ async def clear(interaction: discord.Interaction, amount: app_commands.Range[int
     deleted = await interaction.channel.purge(limit=amount)
     await interaction.followup.send(f"🧹 تم حذف {len(deleted)} رسالة.", ephemeral=True)
 
-
 @bot.tree.command(name="clear_images", description="يحذف الرسائل التي فيها مرفقات فقط")
 @is_allowed_role()
 async def clear_images(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     deleted = await interaction.channel.purge(limit=100, check=lambda m: m.attachments)
     await interaction.followup.send(f"🧹 تم حذف {len(deleted)} رسالة فيها مرفقات.", ephemeral=True)
-
 
 @bot.tree.command(name="clear_user", description="يحذف آخر رسائل عضو معين")
 @is_allowed_role()
@@ -305,19 +357,15 @@ async def clear_user(interaction: discord.Interaction, member: discord.Member, a
     deleted = await interaction.channel.purge(limit=amount, check=lambda m: m.author.id == member.id)
     await interaction.followup.send(f"🧹 تم حذف {len(deleted)} رسالة من {member.mention}.", ephemeral=True)
 
-
 @bot.tree.command(name="clr", description="تنظيف كامل للروم (يعيد إنشاءه بنفس الإعدادات والصلاحيات)")
 @is_allowed_role()
 async def clr(interaction: discord.Interaction):
     channel = interaction.channel
     position = channel.position
-
     await interaction.response.send_message("🧹 جاري تنظيف الروم بالكامل...", ephemeral=True)
-
     new_channel = await channel.clone(reason=f"تنظيف الروم بواسطة {interaction.user}")
     await new_channel.edit(position=position)
     await channel.delete(reason=f"تنظيف الروم بواسطة {interaction.user}")
-
     await new_channel.send(f"✅ تم تنظيف الروم بواسطة {interaction.user.mention}")
 
 
@@ -330,7 +378,6 @@ async def noformrbeast(interaction: discord.Interaction):
     global mrbeast_room
     mrbeast_room = interaction.channel.id
     await interaction.response.send_message("🚫 ممنوع الإرسال هنا - أي رسالة = باند فوري ⚠️")
-
 
 @bot.tree.command(name="remove_banroom", description="يلغي وضع روم الباند")
 @is_allowed_role()
@@ -350,14 +397,12 @@ async def kick(interaction: discord.Interaction, member: discord.Member, reason:
     await member.kick(reason=reason)
     await interaction.response.send_message(f"👢 تم طرد {member.mention}\nالسبب: {reason}")
 
-
 @bot.tree.command(name="ban", description="حظر عضو")
 @is_allowed_role()
 @app_commands.describe(member="العضو", reason="السبب")
 async def ban(interaction: discord.Interaction, member: discord.Member, reason: str = "بدون سبب"):
     await member.ban(reason=reason)
     await interaction.response.send_message(f"🔨 تم حظر {member.mention}\nالسبب: {reason}")
-
 
 @bot.tree.command(name="unban", description="إلغاء حظر عضو عن طريق الآيدي")
 @is_allowed_role()
@@ -370,7 +415,6 @@ async def unban(interaction: discord.Interaction, user_id: str):
     except Exception:
         await interaction.response.send_message("❌ ما قدرت ألغي الحظر، تأكد من الآيدي.", ephemeral=True)
 
-
 @bot.tree.command(name="mute", description="إسكات عضو لمدة معينة (بالدقائق)")
 @is_allowed_role()
 @app_commands.describe(member="العضو", minutes="عدد الدقائق", reason="السبب")
@@ -378,14 +422,12 @@ async def mute(interaction: discord.Interaction, member: discord.Member, minutes
     await member.timeout(timedelta(minutes=minutes), reason=reason)
     await interaction.response.send_message(f"🔇 تم إسكات {member.mention} لمدة {minutes} دقيقة\nالسبب: {reason}")
 
-
 @bot.tree.command(name="unmute", description="إلغاء الإسكات عن عضو")
 @is_allowed_role()
 @app_commands.describe(member="العضو")
 async def unmute(interaction: discord.Interaction, member: discord.Member):
     await member.timeout(None)
     await interaction.response.send_message(f"🔊 تم إلغاء الإسكات عن {member.mention}")
-
 
 @bot.tree.command(name="warn", description="إعطاء تحذير لعضو")
 @is_allowed_role()
@@ -399,7 +441,6 @@ async def warn(interaction: discord.Interaction, member: discord.Member, reason:
         f"⚠️ تم تحذير {member.mention}\nالسبب: {reason}\nعدد التحذيرات: {len(warnings_db[uid])}"
     )
 
-
 @bot.tree.command(name="warnings", description="عرض تحذيرات عضو")
 @app_commands.describe(member="العضو")
 async def warnings_cmd(interaction: discord.Interaction, member: discord.Member):
@@ -408,11 +449,9 @@ async def warnings_cmd(interaction: discord.Interaction, member: discord.Member)
     if not user_warnings:
         await interaction.response.send_message(f"✅ {member.mention} ما عنده أي تحذير.")
         return
-
     text = "\n".join(f"{i+1}. {r}" for i, r in enumerate(user_warnings))
     embed = discord.Embed(title=f"⚠️ تحذيرات {member.display_name}", description=text, color=0xFFAA00)
     await interaction.response.send_message(embed=embed)
-
 
 @bot.tree.command(name="clear_warnings", description="مسح كل تحذيرات عضو")
 @is_allowed_role()
@@ -422,10 +461,6 @@ async def clear_warnings(interaction: discord.Interaction, member: discord.Membe
     save_json(WARN_FILE, warnings_db)
     await interaction.response.send_message(f"✅ تم مسح تحذيرات {member.mention}")
 
-
-# =========================
-# 🆕 أوامر إدارية جديدة
-# =========================
 @bot.tree.command(name="add_role", description="إضافة رول لعضو معين")
 @is_allowed_role()
 @app_commands.describe(member="العضو", role="الرول المراد إضافته")
@@ -435,7 +470,6 @@ async def add_role(interaction: discord.Interaction, member: discord.Member, rol
         await interaction.response.send_message(f"✅ تم إعطاء الرول {role.mention} لـ {member.mention}")
     except Exception as e:
         await interaction.response.send_message(f"❌ تعذر إضافة الرول: `{e}`", ephemeral=True)
-
 
 @bot.tree.command(name="remove_role", description="إزالة رول من عضو معين")
 @is_allowed_role()
@@ -447,20 +481,17 @@ async def remove_role(interaction: discord.Interaction, member: discord.Member, 
     except Exception as e:
         await interaction.response.send_message(f"❌ تعذر إزالة الرول: `{e}`", ephemeral=True)
 
-
 @bot.tree.command(name="lock", description="قفل الروم الحالي")
 @is_allowed_role()
 async def lock_channel(interaction: discord.Interaction):
     await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=False)
     await interaction.response.send_message("🔒 تم قفل الروم بنجاح.")
 
-
 @bot.tree.command(name="unlock", description="فتح الروم الحالي")
 @is_allowed_role()
 async def unlock_channel(interaction: discord.Interaction):
     await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=True)
     await interaction.response.send_message("🔓 تم فتح الروم بنجاح.")
-
 
 @bot.tree.command(name="add_money", description="إضافة رصيد مال لعضو معين")
 @is_allowed_role()
@@ -470,7 +501,6 @@ async def add_money(interaction: discord.Interaction, member: discord.Member, am
     user["balance"] += amount
     save_json(DATA_FILE, money)
     await interaction.response.send_message(f"💵 تم إضافة `{amount}` عملة لـ {member.mention}. رصيده الجديد: `{user['balance']}`")
-
 
 @bot.tree.command(name="remove_money", description="خصم رصيد مال من عضو معين")
 @is_allowed_role()
@@ -483,7 +513,7 @@ async def remove_money(interaction: discord.Interaction, member: discord.Member,
 
 
 # =========================
-# ℹ️ معلومات
+# ℹ️ أوامر المعلومات
 # =========================
 @bot.tree.command(name="userinfo", description="معلومات عن عضو")
 @app_commands.describe(member="العضو (اختياري)")
@@ -498,7 +528,6 @@ async def userinfo(interaction: discord.Interaction, member: discord.Member = No
     embed.add_field(name="🎭 الرتب", value=roles, inline=False)
     await interaction.response.send_message(embed=embed)
 
-
 @bot.tree.command(name="serverinfo", description="معلومات عن السيرفر")
 async def serverinfo(interaction: discord.Interaction):
     guild = interaction.guild
@@ -512,7 +541,6 @@ async def serverinfo(interaction: discord.Interaction):
     embed.add_field(name="🎭 عدد الرتب", value=len(guild.roles), inline=True)
     await interaction.response.send_message(embed=embed)
 
-
 @bot.tree.command(name="avatar", description="عرض صورة عضو بالحجم الكامل")
 @app_commands.describe(member="العضو (اختياري)")
 async def avatar(interaction: discord.Interaction, member: discord.Member = None):
@@ -523,7 +551,7 @@ async def avatar(interaction: discord.Interaction, member: discord.Member = None
 
 
 # =========================
-# 💰 نظام الفلوس
+# 💰 نظام الاقتصاد
 # =========================
 @bot.tree.command(name="daily", description="جمع الراتب اليومي")
 async def daily(interaction: discord.Interaction):
@@ -531,11 +559,7 @@ async def daily(interaction: discord.Interaction):
     today = date.today().isoformat()
 
     if user.get("last_daily_date") == today:
-        embed = discord.Embed(
-            title="⏳ استلمت راتبك اليوم",
-            description="تعال بكرة تستلم راتبك مرة ثانية 💰",
-            color=0xFF5555,
-        )
+        embed = discord.Embed(title="⏳ استلمت راتبك اليوم", description="تعال بكرة تستلم راتبك مرة ثانية 💰", color=0xFF5555)
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
@@ -543,14 +567,9 @@ async def daily(interaction: discord.Interaction):
     user["last_daily_date"] = today
     save_json(DATA_FILE, money)
 
-    embed = discord.Embed(
-        title="💰 الراتب اليومي",
-        description=f"### حصلت على {DAILY_AMOUNT} عملة!\nرصيدك الحالي: **{user['balance']}**",
-        color=0xFFD700,
-    )
+    embed = discord.Embed(title="💰 الراتب اليومي", description=f"### حصلت على {DAILY_AMOUNT} عملة!\nرصيدك الحالي: **{user['balance']}**", color=0xFFD700)
     embed.set_footer(text="تعال بكرة تستلم راتبك مرة ثانية")
     await interaction.response.send_message(embed=embed)
-
 
 @bot.tree.command(name="balance", description="عرض رصيدك أو رصيد عضو")
 @app_commands.describe(member="العضو (اختياري)")
@@ -558,7 +577,6 @@ async def balance(interaction: discord.Interaction, member: discord.Member = Non
     member = member or interaction.user
     user = get_user(member.id)
     await interaction.response.send_message(f"💰 رصيد {member.mention}: {user['balance']}")
-
 
 @bot.tree.command(name="transfer", description="تحويل فلوس لعضو ثاني")
 @app_commands.describe(member="العضو المستلم", amount="المبلغ")
@@ -576,9 +594,7 @@ async def transfer(interaction: discord.Interaction, member: discord.Member, amo
     sender["balance"] -= amount
     receiver["balance"] += amount
     save_json(DATA_FILE, money)
-
     await interaction.response.send_message(f"✅ تم تحويل {amount} عملة إلى {member.mention}")
-
 
 @bot.tree.command(name="rob", description="حاول تسرق فلوس من عضو ثاني (فيه مخاطرة!)")
 @app_commands.describe(member="العضو")
@@ -606,7 +622,6 @@ async def rob(interaction: discord.Interaction, member: discord.Member):
         save_json(DATA_FILE, money)
         await interaction.response.send_message(f"🚔 انمسكت! دفعت غرامة {fine} عملة")
 
-
 @bot.tree.command(name="leaderboard", description="ترتيب أغنى الأعضاء")
 async def leaderboard(interaction: discord.Interaction):
     top = sorted(money.items(), key=lambda x: x[1]["balance"], reverse=True)[:10]
@@ -625,38 +640,26 @@ async def leaderboard(interaction: discord.Interaction):
 
 
 # =========================
-# 🎮 ألعاب وتسلية
+# 🎮 الألعاب والفعاليات
 # =========================
 DICE_FACES = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"]
-
 
 @bot.tree.command(name="coin", description="رمي عملة ذهبية")
 async def coin(interaction: discord.Interaction):
     result = random.choice(["👑 وجه", "🔠 كتابة"])
-    embed = discord.Embed(
-        title="🪙 رمي العملة",
-        description=f"### النتيجة: {result}",
-        color=0xFFD700,
-    )
+    embed = discord.Embed(title="🪙 رمي العملة", description=f"### النتيجة: {result}", color=0xFFD700)
     embed.set_footer(text=f"طلب بواسطة {interaction.user.display_name}")
     await interaction.response.send_message(embed=embed)
-
 
 @bot.tree.command(name="dice", description="رمي نرد")
 async def dice(interaction: discord.Interaction):
     number = random.randint(1, 6)
-    embed = discord.Embed(
-        title="🎲 رمي النرد",
-        description=f"# {DICE_FACES[number - 1]}\n### طلع رقم {number}",
-        color=0x00AAFF,
-    )
+    embed = discord.Embed(title="🎲 رمي النرد", description=f"# {DICE_FACES[number - 1]}\n### طلع رقم {number}", color=0x00AAFF)
     embed.set_footer(text=f"طلب بواسطة {interaction.user.display_name}")
     await interaction.response.send_message(embed=embed)
 
-
 SLOT_EMOJIS = ["🍒", "🍋", "🍇", "🍉", "⭐", "💎", "7️⃣"]
 SLOT_PAYOUTS = {"7️⃣": 10, "💎": 8, "⭐": 6, "🍉": 4, "🍇": 3, "🍋": 2, "🍒": 2}
-
 
 @bot.tree.command(name="slots", description="ماكينة الحظ 🎰 - راهن واربح!")
 @app_commands.describe(bet="مبلغ الرهان")
@@ -684,7 +687,6 @@ async def slots(interaction: discord.Interaction, bet: app_commands.Range[int, 1
     save_json(DATA_FILE, money)
     embed.set_footer(text=f"رصيدك الآن: {user['balance']}")
     await interaction.response.send_message(embed=embed)
-
 
 @bot.tree.command(name="rps", description="🪨📄✂️ حجرة ورقة مقص ضد البوت")
 @app_commands.describe(choice="اختيارك")
@@ -717,7 +719,6 @@ async def rps(interaction: discord.Interaction, choice: app_commands.Choice[str]
     embed.add_field(name="النتيجة", value=result, inline=False)
     await interaction.response.send_message(embed=embed)
 
-
 @bot.tree.command(name="wheel", description="🎡 عجلة الحظ - دورها واربح جوائز")
 async def wheel(interaction: discord.Interaction):
     prizes = [0, 20, 50, 100, 150, 200, 300, 500]
@@ -736,7 +737,6 @@ async def wheel(interaction: discord.Interaction):
     embed.set_footer(text=f"رصيدك الآن: {user['balance']}")
     await interaction.response.send_message(embed=embed)
 
-
 @bot.tree.command(name="guess", description="🎯 خمن رقم بين 1 و10 واربح 50 عملة")
 @app_commands.describe(number="تخمينك (1-10)")
 async def guess(interaction: discord.Interaction, number: app_commands.Range[int, 1, 10]):
@@ -745,19 +745,10 @@ async def guess(interaction: discord.Interaction, number: app_commands.Range[int
         user = get_user(interaction.user.id)
         user["balance"] += 50
         save_json(DATA_FILE, money)
-        embed = discord.Embed(
-            title="🎯 تخمين صحيح!",
-            description=f"### الرقم كان {secret} 🎉\nربحت **50** عملة",
-            color=0x00FF00,
-        )
+        embed = discord.Embed(title="🎯 تخمين صحيح!", description=f"### الرقم كان {secret} 🎉\nربحت **50** عملة", color=0x00FF00)
     else:
-        embed = discord.Embed(
-            title="❌ تخمين خاطئ",
-            description=f"### الرقم الصحيح كان {secret}\nحاول مرة ثانية!",
-            color=0xFF0000,
-        )
+        embed = discord.Embed(title="❌ تخمين خاطئ", description=f"### الرقم الصحيح كان {secret}\nحاول مرة ثانية!", color=0xFF0000)
     await interaction.response.send_message(embed=embed)
-
 
 @bot.tree.command(name="poll", description="إنشاء تصويت سريع (يس/لا)")
 @app_commands.describe(question="السؤال")
@@ -781,29 +772,22 @@ TICKET_CATEGORIES = [
     ("✅ وساطة","وسيط", "طلب وسيط لضمن حق الطرفين"),
 ]
 
-
 class TicketPanelSelect(discord.ui.Select):
     def __init__(self):
         options = [
             discord.SelectOption(label=label, description=desc, value=value)
             for label, value, desc in TICKET_CATEGORIES
         ]
-        super().__init__(
-            placeholder="📩 اختر نوع التكت اللي تبي تفتحه...",
-            options=options,
-            custom_id="ticket_panel_select",
-        )
+        super().__init__(placeholder="📩 اختر نوع التكت اللي تبي تفتحه...", options=options, custom_id="ticket_panel_select")
 
     async def callback(self, interaction: discord.Interaction):
         label = next(l for l, v, d in TICKET_CATEGORIES if v == self.values[0])
         await create_ticket(interaction, label)
 
-
 class TicketPanelView(View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(TicketPanelSelect())
-
 
 class TicketControlView(View):
     def __init__(self):
@@ -846,7 +830,6 @@ class TicketControlView(View):
         await interaction.response.send_message("🔒 جاري إغلاق التكت وحفظ الترانسكريبت خلال 5 ثواني...")
         await close_ticket(interaction.channel, interaction.user)
 
-
 async def create_ticket(interaction: discord.Interaction, category_label: str):
     guild = interaction.guild
     await interaction.response.defer(ephemeral=True)
@@ -881,9 +864,7 @@ async def create_ticket(interaction: discord.Interaction, category_label: str):
         ),
     }
     if support_role:
-        overwrites[support_role] = discord.PermissionOverwrite(
-            view_channel=True, send_messages=True, read_message_history=True
-        )
+        overwrites[support_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True)
 
     channel = await guild.create_text_channel(
         name=f"ticket-{number:04d}",
@@ -920,7 +901,6 @@ async def create_ticket(interaction: discord.Interaction, category_label: str):
     ping = support_role.mention if support_role else ""
     await channel.send(content=f"{interaction.user.mention} {ping}".strip(), embed=embed, view=TicketControlView())
     await interaction.followup.send(f"✅ تم إنشاء تكتك: {channel.mention}", ephemeral=True)
-
 
 async def close_ticket(channel: discord.TextChannel, closer: discord.abc.User):
     data = tickets_db.get(str(channel.id))
@@ -963,8 +943,7 @@ async def close_ticket(channel: discord.TextChannel, closer: discord.abc.User):
     except Exception:
         pass
 
-
-@bot.tree.command(name="ticket_setup", description="إعداد نظام التكتات (كاتيقوري + رول الدعم + روم اللوق)")
+@bot.tree.command(name="ticket_setup", description="إعداد نظام التكتات")
 @is_allowed_role()
 @app_commands.describe(category="الكاتيقوري اللي تُفتح فيها التكتات", support_role="رول فريق الدعم", log_channel="روم حفظ الترانسكريبت (اختياري)")
 async def ticket_setup(
@@ -984,7 +963,6 @@ async def ticket_setup(
     embed.add_field(name="📜 روم اللوق", value=log_channel.mention if log_channel else "غير محدد", inline=True)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-
 @bot.tree.command(name="ticket_panel", description="إرسال لوحة فتح التكتات في هذا الروم")
 @is_allowed_role()
 @app_commands.describe(title="عنوان اللوحة (اختياري)", description="وصف اللوحة (اختياري)")
@@ -1002,7 +980,6 @@ async def ticket_panel_cmd(
     embed.set_footer(text="فريق الدعم متواجد لمساعدتك 24/7")
     await interaction.response.send_message(embed=embed, view=TicketPanelView())
 
-
 @bot.tree.command(name="ticket_add", description="إضافة عضو للتكت الحالي")
 @app_commands.describe(member="العضو المراد إضافته")
 async def ticket_add(interaction: discord.Interaction, member: discord.Member):
@@ -1016,7 +993,6 @@ async def ticket_add(interaction: discord.Interaction, member: discord.Member):
 
     await interaction.channel.set_permissions(member, view_channel=True, send_messages=True, read_message_history=True)
     await interaction.response.send_message(f"✅ تم إضافة {member.mention} للتكت.")
-
 
 @bot.tree.command(name="ticket_remove", description="إزالة عضو من التكت الحالي")
 @app_commands.describe(member="العضو المراد إزالته")
@@ -1035,7 +1011,6 @@ async def ticket_remove(interaction: discord.Interaction, member: discord.Member
     await interaction.channel.set_permissions(member, overwrite=None)
     await interaction.response.send_message(f"✅ تم إزالة {member.mention} من التكت.")
 
-
 @bot.tree.command(name="ticket_rename", description="تغيير اسم التكت الحالي")
 @app_commands.describe(new_name="الاسم الجديد")
 async def ticket_rename(interaction: discord.Interaction, new_name: str):
@@ -1049,7 +1024,6 @@ async def ticket_rename(interaction: discord.Interaction, new_name: str):
 
     await interaction.channel.edit(name=f"ticket-{new_name}")
     await interaction.response.send_message(f"✅ تم تغيير اسم التكت إلى `ticket-{new_name}`")
-
 
 @bot.tree.command(name="ticket_close", description="إغلاق التكت الحالي يدويًا")
 async def ticket_close_cmd(interaction: discord.Interaction):
@@ -1066,12 +1040,11 @@ async def ticket_close_cmd(interaction: discord.Interaction):
 
 
 # =========================
-# ⚡ أدوات عامة
+# ⚡ الأدوات العامة
 # =========================
 @bot.tree.command(name="ping", description="عرض سرعة استجابة البوت")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(f"🏓 {round(bot.latency * 1000)}ms")
-
 
 @bot.tree.command(name="help", description="عرض كل أوامر البوت")
 async def help_cmd(interaction: discord.Interaction):
@@ -1083,32 +1056,15 @@ async def help_cmd(interaction: discord.Interaction):
               "`/say` `/say_embed` `/script` `/add_role` `/remove_role` `/lock` `/unlock` `/add_money` `/remove_money`",
         inline=False,
     )
-    embed.add_field(
-        name="💰 الاقتصاد",
-        value="`/daily` (100 عملة يوميًا) `/balance` `/transfer` `/rob` `/leaderboard`",
-        inline=False,
-    )
-    embed.add_field(
-        name="ℹ️ معلومات",
-        value="`/userinfo` `/serverinfo` `/avatar` `/ping`",
-        inline=False,
-    )
-    embed.add_field(
-        name="🎮 تسلية",
-        value="`/coin` `/dice` `/slots` `/rps` `/wheel` `/guess` `/poll`",
-        inline=False,
-    )
-    embed.add_field(
-        name=f"🎫 التكتات (الإعداد لرول {ALLOWED_ROLE_NAME})",
-        value="`/ticket_setup` `/ticket_panel` — إعداد ونشر لوحة التكتات\n"
-              "`/ticket_add` `/ticket_remove` `/ticket_rename` `/ticket_close` — تُستخدم داخل روم التكت",
-        inline=False,
-    )
+    embed.add_field(name="💰 الاقتصاد", value="`/daily` `/balance` `/transfer` `/rob` `/leaderboard`", inline=False)
+    embed.add_field(name="ℹ️ معلومات", value="`/userinfo` `/serverinfo` `/avatar` `/ping`", inline=False)
+    embed.add_field(name="🎮 تسلية", value="`/coin` `/dice` `/slots` `/rps` `/wheel` `/guess` `/poll`", inline=False)
+    embed.add_field(name="🎫 التكتات", value="`/ticket_setup` `/ticket_panel` `/ticket_add` `/ticket_remove` `/ticket_rename` `/ticket_close`", inline=False)
     await interaction.response.send_message(embed=embed)
 
 
 # =========================
-# 🚀 بداية تشغيل البوت مع الويب
+# 🚀 بداية تشغيل البوت
 # =========================
 @bot.event
 async def on_ready():
@@ -1116,12 +1072,3 @@ async def on_ready():
     bot.add_view(TicketPanelView())
     bot.add_view(TicketControlView())
     await bot.tree.sync()
-
-async def main():
-    async with bot:
-        await start_web_server()
-        await bot.start(TOKEN)
-
-if __name__ == "__main__":
-    asyncio.run(main())
-
