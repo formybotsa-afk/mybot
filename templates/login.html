@@ -1,29 +1,83 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تسجيل الدخول - لوحة التحكم</title>
-    <style>
-        * { box-sizing: border-box; font-family: sans-serif; }
-        body { background-color: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .login-card { background: #1e293b; padding: 2rem; border-radius: 12px; width: 100%; max-width: 400px; text-align: center; }
-        h2 { margin-bottom: 1.5rem; color: #38bdf8; }
-        input { width: 100%; padding: 0.75rem; margin-bottom: 1rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; text-align: center; }
-        button { width: 100%; padding: 0.75rem; border: none; border-radius: 6px; background: #0284c7; color: white; cursor: pointer; font-weight: bold; }
-        .error { color: #f87171; margin-top: 1rem; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔐 تسجيل الدخول</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Tajawal',sans-serif;}
+body{
+  min-height:100vh; display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(ellipse at center, #0f1c3a 0%, #070b14 70%);
+  overflow:hidden;
+}
+body::before{
+  content:""; position:absolute; inset:0;
+  background-image:
+    radial-gradient(2px 2px at 15% 25%, rgba(0,212,255,.5), transparent),
+    radial-gradient(1.5px 1.5px at 65% 75%, rgba(124,58,237,.6), transparent),
+    radial-gradient(1px 1px at 85% 15%, rgba(255,255,255,.4), transparent);
+  background-size:400px 400px,350px 350px,250px 250px;
+  animation:stars 60s linear infinite;
+}
+@keyframes stars{from{background-position:0 0,0 0,0 0}to{background-position:400px 400px,350px 350px,250px 250px}}
+.login-card{
+  position:relative; z-index:2;
+  background:rgba(20,28,48,.7); backdrop-filter:blur(24px);
+  padding:48px 40px; border-radius:24px; border:1px solid rgba(0,212,255,.2);
+  box-shadow:0 30px 80px rgba(0,212,255,.15), 0 0 0 1px rgba(255,255,255,.03) inset;
+  width:100%; max-width:420px; text-align:center;
+  animation:fadeIn .6s ease;
+}
+@keyframes fadeIn{from{opacity:0; transform:translateY(20px)}to{opacity:1; transform:translateY(0)}}
+.logo{
+  width:80px; height:80px; margin:0 auto 20px;
+  border-radius:22px; display:flex; align-items:center; justify-content:center;
+  font-size:40px; background:linear-gradient(135deg,#00d4ff,#7c3aed);
+  box-shadow:0 10px 30px rgba(0,212,255,.4); animation:float 3s ease-in-out infinite;
+}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+h1{
+  font-size:26px; font-weight:900; margin-bottom:8px;
+  background:linear-gradient(135deg,#00d4ff,#7c3aed,#00d4ff);
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  background-size:200% 200%; animation:gradient 4s ease infinite;
+}
+@keyframes gradient{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+p{color:#94a3b8; font-size:14px; margin-bottom:28px;}
+input{
+  width:100%; padding:15px 20px; border-radius:14px;
+  border:1px solid rgba(80,120,200,.25); background:rgba(7,11,20,.6);
+  color:#fff; font-size:15px; font-family:inherit; outline:none;
+  text-align:center; letter-spacing:2px; transition:all .25s;
+}
+input:focus{border-color:#00d4ff; box-shadow:0 0 0 3px rgba(0,212,255,.15);}
+button{
+  width:100%; margin-top:18px; padding:15px; border:none; border-radius:14px;
+  background:linear-gradient(135deg,#00d4ff,#7c3aed); color:#fff;
+  font-size:16px; font-weight:700; font-family:inherit; cursor:pointer;
+  transition:all .25s; box-shadow:0 8px 24px rgba(0,212,255,.3);
+}
+button:hover{transform:translateY(-2px); box-shadow:0 12px 32px rgba(0,212,255,.5);}
+button:active{transform:translateY(0);}
+.error{
+  background:rgba(239,68,68,.12); color:#f87171; padding:12px;
+  border-radius:12px; margin-bottom:20px; font-size:14px;
+  border:1px solid rgba(239,68,68,.3);
+}
+</style>
 </head>
 <body>
-    <div class="login-card">
-        <h2>🔒 لوحة تحكم البوت</h2>
-        <form method="POST" action="/login">
-            <input type="password" name="password" placeholder="أدخل كلمة السر" required>
-            <button type="submit">دخول</button>
-        </form>
-        {% if error %}
-        <p class="error">{{ error }}</p>
-        {% endif %}
-    </div>
+<div class="login-card">
+  <div class="logo">⚡</div>
+  <h1>لوحة التحكم</h1>
+  <p>ادخل كلمة المرور للوصول إلى النظام</p>
+  {% if error %}<div class="error">❌ {{ error }}</div>{% endif %}
+  <form method="POST" action="/login">
+    <input type="password" name="password" placeholder="••••••••" required autofocus>
+    <button type="submit">🚀 دخول</button>
+  </form>
+</div>
 </body>
 </html>
