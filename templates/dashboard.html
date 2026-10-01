@@ -1,79 +1,595 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة التحكم بالبوت</title>
-    <style>
-        * { box-sizing: border-box; font-family: sans-serif; }
-        body { background-color: #0f172a; color: #f8fafc; margin: 0; padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #334155; padding-bottom: 1rem; margin-bottom: 2rem; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 2rem; }
-        .stat-card { background: #1e293b; padding: 1.5rem; border-radius: 10px; border-right: 4px solid #38bdf8; text-align: center; }
-        .stat-card h3 { margin: 0; color: #94a3b8; font-size: 0.9rem; }
-        .stat-card p { margin: 10px 0 0 0; font-size: 1.8rem; font-weight: bold; }
-        .section { background: #1e293b; padding: 1.5rem; border-radius: 10px; margin-bottom: 1.5rem; }
-        .section h2 { margin-top: 0; color: #38bdf8; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }
-        form { display: grid; gap: 10px; max-width: 500px; }
-        input, select, textarea { padding: 0.6rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; }
-        button { padding: 0.75rem; border: none; border-radius: 6px; background: #0284c7; color: white; cursor: pointer; font-weight: bold; }
-        .logout { color: #f87171; text-decoration: none; font-weight: bold; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎮 لوحة التحكم - Control Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#070b14; --bg2:#0d1424; --card:rgba(20,28,48,.7);
+  --border:rgba(80,120,200,.18); --primary:#00d4ff; --primary2:#7c3aed;
+  --accent:#22d3ee; --success:#10b981; --danger:#ef4444; --warn:#f59e0b;
+  --text:#e2e8f0; --muted:#94a3b8;
+}
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Tajawal',sans-serif;}
+body{
+  background:radial-gradient(ellipse at top left, #0f1c3a 0%, #070b14 45%, #0a0520 100%);
+  color:var(--text); min-height:100vh; padding:0; overflow-x:hidden;
+}
+body::before{
+  content:""; position:fixed; inset:0;
+  background-image:
+    radial-gradient(2px 2px at 20% 30%, rgba(0,212,255,.4), transparent),
+    radial-gradient(1.5px 1.5px at 60% 70%, rgba(124,58,237,.5), transparent),
+    radial-gradient(1px 1px at 80% 10%, rgba(255,255,255,.3), transparent),
+    radial-gradient(1.5px 1.5px at 40% 90%, rgba(0,212,255,.3), transparent);
+  background-size:550px 550px,400px 400px,300px 300px,500px 500px;
+  animation:stars 90s linear infinite; pointer-events:none; opacity:.55;
+}
+@keyframes stars{from{background-position:0 0,0 0,0 0,0 0}to{background-position:550px 550px,400px 400px,300px 300px,500px 500px}}
+
+/* Sidebar */
+.sidebar{
+  position:fixed; top:0; right:0; width:260px; height:100vh;
+  background:linear-gradient(180deg, rgba(15,23,42,.95), rgba(10,15,30,.98));
+  border-left:1px solid var(--border);
+  backdrop-filter:blur(20px); z-index:100; padding:22px 14px;
+  display:flex; flex-direction:column; gap:6px; transition:transform .3s;
+  box-shadow:-10px 0 40px rgba(0,0,0,.5);
+}
+.sidebar .brand{
+  font-size:22px; font-weight:900; text-align:center; padding:12px 0 20px;
+  background:linear-gradient(135deg,#00d4ff,#7c3aed);
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  border-bottom:1px solid var(--border); margin-bottom:10px; letter-spacing:1px;
+}
+.nav-item{
+  padding:13px 16px; border-radius:12px; cursor:pointer; color:var(--muted);
+  font-weight:500; display:flex; align-items:center; gap:12px;
+  transition:all .25s ease; border:1px solid transparent; font-size:15px;
+}
+.nav-item:hover{background:rgba(0,212,255,.08); color:var(--text); transform:translateX(-4px);}
+.nav-item.active{
+  background:linear-gradient(90deg, rgba(0,212,255,.15), rgba(124,58,237,.12));
+  color:#fff; border-color:rgba(0,212,255,.35);
+  box-shadow:0 0 20px rgba(0,212,255,.15), inset 0 0 20px rgba(0,212,255,.05);
+}
+.nav-item .icon{font-size:18px; width:22px; text-align:center;}
+.logout-btn{
+  margin-top:auto; padding:12px; border-radius:12px; text-align:center;
+  background:rgba(239,68,68,.12); color:#f87171; border:1px solid rgba(239,68,68,.3);
+  text-decoration:none; font-weight:600; transition:all .25s;
+}
+.logout-btn:hover{background:rgba(239,68,68,.22);}
+
+/* Main */
+.main{margin-right:260px; padding:24px 30px; min-height:100vh;}
+.topbar{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:16px 22px; background:var(--card); border:1px solid var(--border);
+  border-radius:16px; backdrop-filter:blur(20px); margin-bottom:24px;
+}
+.topbar h1{font-size:22px; font-weight:900; letter-spacing:.5px;}
+.topbar h1 span{background:linear-gradient(135deg,#00d4ff,#7c3aed); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+.bot-chip{
+  display:flex; align-items:center; gap:10px; padding:8px 16px;
+  background:rgba(0,212,255,.08); border:1px solid rgba(0,212,255,.25); border-radius:50px;
+}
+.bot-chip img{width:32px; height:32px; border-radius:50%; border:2px solid var(--primary);}
+.bot-chip .status{width:8px; height:8px; border-radius:50%; background:var(--success); box-shadow:0 0 10px var(--success); animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* Stats */
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:16px; margin-bottom:26px;}
+.stat-card{
+  background:var(--card); border:1px solid var(--border); border-radius:18px;
+  padding:20px; position:relative; overflow:hidden; transition:all .3s;
+  backdrop-filter:blur(20px); cursor:default;
+}
+.stat-card:hover{transform:translateY(-4px); border-color:rgba(0,212,255,.4); box-shadow:0 10px 30px rgba(0,212,255,.12);}
+.stat-card::before{content:""; position:absolute; top:0; right:0; width:80px; height:80px; border-radius:50%; background:radial-gradient(circle, var(--c, #00d4ff) 0%, transparent 70%); opacity:.15; transform:translate(30%,-30%);}
+.stat-card h4{font-size:13px; color:var(--muted); font-weight:500; margin-bottom:10px; letter-spacing:.5px;}
+.stat-card .val{font-size:30px; font-weight:900; background:linear-gradient(135deg, var(--c,#00d4ff), #fff); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+.stat-card .icon-big{position:absolute; left:16px; top:50%; transform:translateY(-50%); font-size:38px; opacity:.15;}
+
+/* Sections */
+.section{
+  background:var(--card); border:1px solid var(--border); border-radius:20px;
+  padding:24px; margin-bottom:22px; backdrop-filter:blur(20px);
+  animation:fadeUp .4s ease; display:none;
+}
+.section.active{display:block;}
+@keyframes fadeUp{from{opacity:0; transform:translateY(15px)}to{opacity:1; transform:translateY(0)}}
+.section h2{
+  font-size:20px; font-weight:800; margin-bottom:20px;
+  display:flex; align-items:center; gap:10px; padding-bottom:14px;
+  border-bottom:1px solid var(--border); color:#fff;
+}
+.section h2 .emoji{font-size:22px;}
+
+/* Forms */
+.form-grid{display:grid; gap:14px;}
+.form-row{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+@media(max-width:700px){.form-row{grid-template-columns:1fr}}
+label{font-size:13px; color:var(--muted); font-weight:600; margin-bottom:6px; display:block; letter-spacing:.3px;}
+input, select, textarea{
+  width:100%; padding:12px 16px; border-radius:11px;
+  border:1px solid var(--border); background:rgba(7,11,20,.6); color:#fff;
+  font-size:14px; font-family:inherit; transition:all .25s; outline:none;
+}
+input:focus, select:focus, textarea:focus{
+  border-color:var(--primary); box-shadow:0 0 0 3px rgba(0,212,255,.12);
+  background:rgba(0,212,255,.04);
+}
+textarea{resize:vertical; min-height:80px;}
+.btn{
+  padding:13px 24px; border:none; border-radius:12px; cursor:pointer;
+  font-weight:700; font-size:15px; font-family:inherit; transition:all .25s;
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  background:linear-gradient(135deg,#00d4ff,#7c3aed); color:#fff;
+  box-shadow:0 6px 20px rgba(0,212,255,.25); letter-spacing:.3px;
+}
+.btn:hover{transform:translateY(-2px); box-shadow:0 10px 28px rgba(0,212,255,.4);}
+.btn:active{transform:translateY(0);}
+.btn-sm{padding:8px 14px; font-size:13px; border-radius:9px; box-shadow:none;}
+.btn-danger{background:linear-gradient(135deg,#ef4444,#b91c1c); box-shadow:0 6px 20px rgba(239,68,68,.25);}
+.btn-success{background:linear-gradient(135deg,#10b981,#047857); box-shadow:0 6px 20px rgba(16,185,129,.25);}
+.btn-warn{background:linear-gradient(135deg,#f59e0b,#b45309); box-shadow:0 6px 20px rgba(245,158,11,.25);}
+.btn-ghost{background:rgba(255,255,255,.05); border:1px solid var(--border); color:var(--text); box-shadow:none;}
+.btn-ghost:hover{background:rgba(255,255,255,.1);}
+
+/* Tables */
+.table-wrap{overflow-x:auto; border-radius:14px; border:1px solid var(--border);}
+table{width:100%; border-collapse:collapse; font-size:14px;}
+thead{background:rgba(0,212,255,.06);}
+th{padding:14px; text-align:right; font-weight:700; color:var(--primary); font-size:13px; letter-spacing:.3px; border-bottom:1px solid var(--border);}
+td{padding:12px 14px; text-align:right; border-bottom:1px solid rgba(80,120,200,.08);}
+tbody tr{transition:background .2s;}
+tbody tr:hover{background:rgba(0,212,255,.04);}
+tbody tr:last-child td{border-bottom:none;}
+.badge{
+  background:rgba(0,212,255,.12); color:#67e8f9; padding:4px 10px;
+  border-radius:8px; font-size:12px; font-weight:600; display:inline-block;
+  margin:2px; border:1px solid rgba(0,212,255,.2);
+}
+.badge-success{background:rgba(16,185,129,.12); color:#34d399; border-color:rgba(16,185,129,.25);}
+.badge-danger{background:rgba(239,68,68,.12); color:#f87171; border-color:rgba(239,68,68,.25);}
+.badge-warn{background:rgba(245,158,11,.12); color:#fbbf24; border-color:rgba(245,158,11,.25);}
+
+.avatar-sm{width:36px; height:36px; border-radius:50%; border:2px solid rgba(0,212,255,.3); vertical-align:middle;}
+.member-row{display:flex; align-items:center; gap:10px;}
+
+/* Empty */
+.empty{
+  padding:40px; text-align:center; color:var(--muted);
+  background:rgba(0,0,0,.15); border:1px dashed var(--border); border-radius:14px;
+  font-size:15px;
+}
+.empty .big{font-size:48px; margin-bottom:10px; display:block; opacity:.5;}
+
+/* Modal quick actions */
+.action-bar{display:flex; gap:8px; flex-wrap:wrap;}
+
+/* Toast */
+.toast{
+  position:fixed; bottom:24px; left:24px; padding:14px 22px;
+  background:linear-gradient(135deg,#10b981,#047857); color:#fff;
+  border-radius:12px; font-weight:600; box-shadow:0 10px 30px rgba(16,185,129,.4);
+  z-index:999; animation:slideIn .4s; opacity:0;
+}
+@keyframes slideIn{from{transform:translateX(-100px); opacity:0}to{transform:translateX(0); opacity:1}}
+
+/* Search */
+.search-box{position:relative; margin-bottom:16px;}
+.search-box input{padding-right:44px;}
+.search-box::before{content:"🔍"; position:absolute; right:16px; top:50%; transform:translateY(-50%); font-size:16px; pointer-events:none;}
+
+/* Tabs inside section */
+.tabs{display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap; border-bottom:1px solid var(--border); padding-bottom:14px;}
+.tab{
+  padding:9px 18px; border-radius:10px; cursor:pointer; font-size:14px;
+  font-weight:600; color:var(--muted); background:rgba(255,255,255,.03);
+  border:1px solid var(--border); transition:all .2s;
+}
+.tab:hover{color:var(--text); background:rgba(0,212,255,.06);}
+.tab.active{
+  background:linear-gradient(135deg, rgba(0,212,255,.2), rgba(124,58,237,.15));
+  color:#fff; border-color:rgba(0,212,255,.4);
+}
+.tab-panel{display:none;}
+.tab-panel.active{display:block; animation:fadeUp .3s;}
+
+/* Mobile */
+@media(max-width:900px){
+  .sidebar{transform:translateX(100%);}
+  .sidebar.open{transform:translateX(0);}
+  .main{margin-right:0; padding:16px;}
+  .menu-toggle{display:block !important;}
+}
+.menu-toggle{
+  display:none; position:fixed; top:16px; right:16px; z-index:200;
+  background:var(--primary); color:#fff; border:none; width:44px; height:44px;
+  border-radius:12px; font-size:20px; cursor:pointer; box-shadow:0 4px 16px rgba(0,212,255,.4);
+}
+</style>
 </head>
 <body>
-    <div class="header">
-        <h1>🎮 لوحة تحكم البوت</h1>
-        <a href="/logout" class="logout">تسجيل الخروج 🚪</a>
-    </div>
 
+<button class="menu-toggle" onclick="document.querySelector('.sidebar').classList.toggle('open')">☰</button>
+
+<div class="sidebar">
+  <div class="brand">⚡ CONTROL HUB</div>
+  <div class="nav-item active" onclick="showSection('overview', this)"><span class="icon">📊</span> نظرة عامة</div>
+  <div class="nav-item" onclick="showSection('scripts', this)"><span class="icon">🤖</span> السكربتات التلقائية</div>
+  <div class="nav-item" onclick="showSection('messages', this)"><span class="icon">📢</span> إرسال رسائل</div>
+  <div class="nav-item" onclick="showSection('members', this)"><span class="icon">👥</span> إدارة الأعضاء</div>
+  <div class="nav-item" onclick="showSection('roles', this)"><span class="icon">🎭</span> إدارة الرتب</div>
+  <div class="nav-item" onclick="showSection('economy', this)"><span class="icon">💰</span> الاقتصاد</div>
+  <div class="nav-item" onclick="showSection('tickets', this)"><span class="icon">🎫</span> التكتات</div>
+  <div class="nav-item" onclick="showSection('cleanup', this)"><span class="icon">🧹</span> التنظيف</div>
+  <div class="nav-item" onclick="showSection('settings', this)"><span class="icon">⚙️</span> الإعدادات</div>
+  <a href="/logout" class="logout-btn">🚪 تسجيل الخروج</a>
+</div>
+
+<div class="main">
+  <div class="topbar">
+    <h1>لوحة التحكم <span>الاحترافية</span></h1>
+    <div class="bot-chip">
+      <span class="status"></span>
+      {% if bot_avatar %}<img src="{{ bot_avatar }}" alt="bot">{% endif %}
+      <div>
+        <div style="font-size:13px; font-weight:700;">{{ bot_user }}</div>
+        <div style="font-size:11px; color:var(--muted);">متصل • <span id="live-ping">{{ stats.ping }}</span>ms</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== OVERVIEW ========== -->
+  <div class="section active" id="overview">
+    <h2><span class="emoji">📊</span> نظرة عامة على البوت</h2>
     <div class="stats">
-        <div class="stat-card">
-            <h3>الحالة</h3>
-            <p style="color: #4ade80;">متصل 🟢</p>
-        </div>
-        <div class="stat-card">
-            <h3>عدد السيرفرات</h3>
-            <p>{{ stats.guilds }}</p>
-        </div>
-        <div class="stat-card">
-            <h3>إجمالي الأعضاء</h3>
-            <p>{{ stats.users }}</p>
-        </div>
-        <div class="stat-card">
-            <h3>سرعة الاستجابة</h3>
-            <p>{{ stats.ping }} ms</p>
-        </div>
+      <div class="stat-card" style="--c:#00d4ff"><h4>السيرفرات</h4><div class="val">{{ stats.guilds }}</div><span class="icon-big">🌐</span></div>
+      <div class="stat-card" style="--c:#7c3aed"><h4>إجمالي الأعضاء</h4><div class="val">{{ stats.users }}</div><span class="icon-big">👥</span></div>
+      <div class="stat-card" style="--c:#10b981"><h4>سرعة الاستجابة</h4><div class="val" id="ov-ping">{{ stats.ping }}<span style="font-size:14px">ms</span></div><span class="icon-big">⚡</span></div>
+      <div class="stat-card" style="--c:#f59e0b"><h4>تكتات مفتوحة</h4><div class="val">{{ open_tickets }}</div><span class="icon-big">🎫</span></div>
+      <div class="stat-card" style="--c:#22d3ee"><h4>سكربتات تلقائية</h4><div class="val">{{ auto_scripts|length }}</div><span class="icon-big">🤖</span></div>
+      <div class="stat-card" style="--c:#ef4444"><h4>مدة التشغيل</h4><div class="val" style="font-size:18px">{{ stats.uptime }}</div><span class="icon-big">⏱️</span></div>
     </div>
 
-    <div class="section">
-        <h2>📢 إرسال رسالة لروم معين</h2>
-        <form method="POST" action="/api/send_message">
-            <label>اختر الروم:</label>
-            <select name="channel_id" required>
-                {% for channel in channels %}
-                <option value="{{ channel.id }}">#{{ channel.name }} ({{ channel.guild }})</option>
-                {% endfor %}
-            </select>
-            <label>نص الرسالة:</label>
-            <textarea name="message" rows="3" placeholder="اكتب الرسالة هنا..." required></textarea>
-            <button type="submit">إرسال الرسالة 🚀</button>
-        </form>
+    <h2 style="margin-top:26px; font-size:16px;"><span class="emoji">🏆</span> أعلى 10 أرصدة</h2>
+    {% if top_money %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>العضو</th><th>السيرفر</th><th>الرصيد</th></tr></thead>
+        <tbody>
+          {% for m in top_money %}
+          <tr>
+            <td><strong style="color:var(--primary)">#{{ loop.index }}</strong></td>
+            <td><div class="member-row"><span>{{ m.name }}</span></div></td>
+            <td style="color:var(--muted); font-size:13px">{{ m.guild }}</td>
+            <td><span class="badge badge-success">💰 {{ m.balance }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty"><span class="big">💰</span>لا يوجد أعضاء بعد</div>
+    {% endif %}
+  </div>
+
+  <!-- ========== SCRIPTS ========== -->
+  <div class="section" id="scripts">
+    <h2><span class="emoji">🤖</span> نظام السكربتات التلقائية الذكي</h2>
+
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('scripts','add', this)">➕ إضافة سكربت</div>
+      <div class="tab" onclick="showTab('scripts','list', this)">📜 السكربتات ({{ auto_scripts|length }})</div>
     </div>
 
-    <div class="section">
-        <h2>💰 إدارة رصيد عضو</h2>
-        <form method="POST" action="/api/modify_balance">
-            <label>آيدي العضو (User ID):</label>
-            <input type="text" name="user_id" placeholder="مثال: 123456789012345678" required>
-            <label>المبلغ:</label>
-            <input type="number" name="amount" placeholder="500" required>
-            <label>الإجراء:</label>
-            <select name="action">
-                <option value="add">إضافة رصيد ➕</option>
-                <option value="remove">خصم رصيد ➖</option>
-            </select>
-            <button type="submit">تحديث الرصيد 💵</button>
-        </form>
+    <div class="tab-panel active" id="scripts-add">
+      <form method="POST" action="/api/add_auto_script" class="form-grid">
+        <div>
+          <label>🎯 عنوان السكربت / الماب</label>
+          <input type="text" name="title" placeholder="مثال: سكربت ماب البيوت" required>
+        </div>
+        <div>
+          <label>🔑 الكلمات المفتاحية (افصل بفارزة ,)</label>
+          <input type="text" name="keywords" placeholder="سكربت بيوت, ابي سكربت, هات السكربت" required>
+        </div>
+        <div class="form-row">
+          <div>
+            <label>📱 كود الهاتف (Mobile)</label>
+            <textarea name="mobile_script" rows="5" placeholder="الكود الخاص بالهاتف..."></textarea>
+          </div>
+          <div>
+            <label>💻 كود اللاب توب (PC)</label>
+            <textarea name="pc_script" rows="5" placeholder="الكود الخاص بالبي سي..."></textarea>
+          </div>
+        </div>
+        <button type="submit" class="btn">💾 حفظ السكربت التلقائي</button>
+      </form>
     </div>
+
+    <div class="tab-panel" id="scripts-list">
+      {% if auto_scripts %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>العنوان</th><th>الكلمات المفتاحية</th><th>إجراءات</th></tr></thead>
+          <tbody>
+            {% for sid, sdata in auto_scripts.items() %}
+            <tr>
+              <td><strong>{{ sdata.title }}</strong></td>
+              <td>{% for kw in sdata.keywords %}<span class="badge">{{ kw }}</span>{% endfor %}</td>
+              <td>
+                <form method="POST" action="/api/delete_auto_script" style="display:inline" onsubmit="return confirm('متأكد من الحذف؟')">
+                  <input type="hidden" name="script_id" value="{{ sid }}">
+                  <button type="submit" class="btn btn-sm btn-danger">🗑️ حذف</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="empty"><span class="big">🤖</span>لا توجد سكربتات تلقائية بعد</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ========== MESSAGES ========== -->
+  <div class="section" id="messages">
+    <h2><span class="emoji">📢</span> إرسال رسالة لروم معين</h2>
+    <form method="POST" action="/api/send_message" class="form-grid">
+      <div>
+        <label>🎯 اختر الروم</label>
+        <select name="channel_id" required>
+          {% for ch in channels %}<option value="{{ ch.id }}">#{{ ch.name }} — {{ ch.guild }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>عنوان Embed (اختياري)</label>
+        <input type="text" name="embed_title" placeholder="اتركه فارغ لو رسالة عادية">
+      </div>
+      <div>
+        <label>📝 نص الرسالة</label>
+        <textarea name="message" rows="4" placeholder="اكتب رسالتك هنا..." required></textarea>
+      </div>
+      <button type="submit" class="btn">🚀 إرسال</button>
+    </form>
+  </div>
+
+  <!-- ========== MEMBERS ========== -->
+  <div class="section" id="members">
+    <h2><span class="emoji">👥</span> إدارة الأعضاء</h2>
+
+    <div class="search-box">
+      <input type="text" id="member-search" placeholder="ابحث بالاسم أو الآيدي..." oninput="searchMembers(this.value)">
+    </div>
+    <div id="search-results"></div>
+
+    <h2 style="margin-top:24px; font-size:16px;">📋 قائمة الأعضاء ({{ members|length }})</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>العضو</th><th>الآيدي</th><th>الرصيد</th><th>التحذيرات</th><th>الإجراءات</th></tr></thead>
+        <tbody>
+          {% for m in members[:50] %}
+          <tr>
+            <td>
+              <div class="member-row">
+                <img src="https://cdn.discordapp.com/embed/avatars/{{ (m.id|int) % 5 }}.png" class="avatar-sm">
+                <span>{{ m.name }}</span>
+              </div>
+            </td>
+            <td style="color:var(--muted); font-size:12px;"><code>{{ m.id }}</code></td>
+            <td><span class="badge badge-success">💰 {{ m.balance }}</span></td>
+            <td>{% set wc = warnings_summary.get(m.id, 0) %}
+              {% if wc > 0 %}<span class="badge badge-warn">⚠️ {{ wc }}</span>{% else %}<span class="badge">✅ 0</span>{% endif %}
+            </td>
+            <td>
+              <div class="action-bar">
+                <form method="POST" action="/api/member_action" style="display:inline"><input type="hidden" name="member_id" value="{{ m.id }}"><input type="hidden" name="action" value="warn"><input type="hidden" name="reason" value="من لوحة التحكم"><button class="btn btn-sm btn-warn" title="تحذير">⚠️</button></form>
+                <form method="POST" action="/api/member_action" style="display:inline" onsubmit="return confirm('متأكد من الطرد؟')"><input type="hidden" name="member_id" value="{{ m.id }}"><input type="hidden" name="action" value="kick"><button class="btn btn-sm btn-ghost" title="طرد">👢</button></form>
+                <form method="POST" action="/api/member_action" style="display:inline" onsubmit="return confirm('متأكد من الحظر؟')"><input type="hidden" name="member_id" value="{{ m.id }}"><input type="hidden" name="action" value="ban"><button class="btn btn-sm btn-danger" title="حظر">🔨</button></form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ========== ROLES ========== -->
+  <div class="section" id="roles">
+    <h2><span class="emoji">🎭</span> إدارة الرتب</h2>
+    <div class="form-grid" style="max-width:700px;">
+      <div>
+        <label>👤 العضو (الآيدي)</label>
+        <input type="text" id="role-member-id" placeholder="123456789012345678">
+      </div>
+      <div>
+        <label>🎭 الرول</label>
+        <select id="role-id">
+          {% for r in roles %}<option value="{{ r.id }}">{{ r.name }} — {{ r.guild }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-row">
+        <button type="button" class="btn btn-success" onclick="roleAction('add')">➕ إضافة رول</button>
+        <button type="button" class="btn btn-danger" onclick="roleAction('remove')">➖ إزالة رول</button>
+      </div>
+    </div>
+    <form id="role-form" method="POST" action="/api/role_action" style="display:none">
+      <input type="hidden" name="member_id" id="r-member"><input type="hidden" name="role_id" id="r-role"><input type="hidden" name="action" id="r-action">
+    </form>
+  </div>
+
+  <!-- ========== ECONOMY ========== -->
+  <div class="section" id="economy">
+    <h2><span class="emoji">💰</span> إدارة الاقتصاد</h2>
+    <form method="POST" action="/api/modify_balance" class="form-grid" style="max-width:700px;">
+      <div class="form-row">
+        <div><label>👤 آيدي العضو</label><input type="text" name="user_id" placeholder="123456789012345678" required></div>
+        <div><label>💵 المبلغ</label><input type="number" name="amount" placeholder="500" required></div>
+      </div>
+      <div>
+        <label>🎯 الإجراء</label>
+        <select name="action">
+          <option value="add">➕ إضافة رصيد</option>
+          <option value="remove">➖ خصم رصيد</option>
+          <option value="set">🔄 تعيين الرصيد</option>
+        </select>
+      </div>
+      <button type="submit" class="btn">💾 تحديث الرصيد</button>
+    </form>
+  </div>
+
+  <!-- ========== TICKETS ========== -->
+  <div class="section" id="tickets">
+    <h2><span class="emoji">🎫</span> التكتات ({{ tickets|length }} نشط)</h2>
+
+    <div class="stats" style="margin-bottom:20px;">
+      <div class="stat-card" style="--c:#00d4ff"><h4>عدد التكتات</h4><div class="val">{{ tickets|length }}</div><span class="icon-big">🎫</span></div>
+      <div class="stat-card" style="--c:#10b981"><h4>الكاتيقوري</h4><div class="val" style="font-size:14px">{% if ticket_config.category_id %}✅ مُعد{% else %}❌ غير مُعد{% endif %}</div><span class="icon-big">📁</span></div>
+    </div>
+
+    {% if tickets %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>النوع</th><th>صاحب التكت</th><th>مستلم</th><th>إجراء</th></tr></thead>
+        <tbody>
+          {% for tid, t in tickets.items() %}
+          <tr>
+            <td><strong style="color:var(--primary)">#{{ "%04d"|format(t.number) }}</strong></td>
+            <td><span class="badge">{{ t.category }}</span></td>
+            <td><code style="font-size:12px">{{ t.owner_id }}</code></td>
+            <td>{% if t.claimed_by %}<span class="badge badge-success">✅</span>{% else %}<span class="badge badge-warn">⏳</span>{% endif %}</td>
+            <td>
+              <form method="POST" action="/api/close_ticket" style="display:inline" onsubmit="return confirm('إغلاق التكت؟')">
+                <input type="hidden" name="channel_id" value="{{ tid }}">
+                <button class="btn btn-sm btn-danger">🔒 إغلاق</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty"><span class="big">🎫</span>لا توجد تكتات مفتوحة</div>
+    {% endif %}
+  </div>
+
+  <!-- ========== CLEANUP ========== -->
+  <div class="section" id="cleanup">
+    <h2><span class="emoji">🧹</span> تنظيف الرومات</h2>
+    <form method="POST" action="/api/clear_channel" class="form-grid" style="max-width:700px;">
+      <div>
+        <label>🎯 اختر الروم</label>
+        <select name="channel_id" required>
+          {% for ch in channels %}<option value="{{ ch.id }}">#{{ ch.name }} — {{ ch.guild }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>🔢 عدد الرسائل (1-1000)</label>
+        <input type="number" name="amount" value="100" min="1" max="1000" required>
+      </div>
+      <button type="submit" class="btn btn-danger" onclick="return confirm('متأكد من حذف الرسائل؟')">🧹 حذف الرسائل</button>
+    </form>
+
+    <h2 style="margin-top:26px; font-size:16px;"><span class="emoji">🚫</span> روم الباند</h2>
+    <div style="background:rgba(239,68,68,.06); border:1px solid rgba(239,68,68,.2); border-radius:14px; padding:20px; margin-top:14px;">
+      <p style="color:var(--muted); margin-bottom:14px; font-size:14px;">
+        الحالة الحالية: {% if bot_config.ban_room_enabled %}<span class="badge badge-danger">🔴 مُفعّل</span>{% else %}<span class="badge badge-success">✅ مُعطّل</span>{% endif %}
+      </p>
+      <form method="POST" action="/api/ban_room" class="form-grid">
+        <div>
+          <label>اختر الروم لتشغيل الحماية عليه</label>
+          <select name="channel_id">
+            {% for ch in channels %}<option value="{{ ch.id }}">#{{ ch.name }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-row">
+          <button type="submit" name="action" value="enable" class="btn btn-danger">🔴 تفعيل</button>
+          <button type="submit" name="action" value="disable" class="btn btn-ghost">⏹️ إيقاف</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========== SETTINGS ========== -->
+  <div class="section" id="settings">
+    <h2><span class="emoji">⚙️</span> إعدادات البوت</h2>
+    <form method="POST" action="/api/update_config" class="form-grid" style="max-width:700px;">
+      <div class="form-row">
+        <div><label>💰 مبلغ الراتب اليومي</label><input type="number" name="daily_amount" value="{{ bot_config.daily_amount }}" required></div>
+        <div><label>🎭 اسم رول الإدارة</label><input type="text" name="allowed_role_name" value="{{ bot_config.allowed_role_name }}" required></div>
+      </div>
+      <div class="form-row">
+        <div><label>🚫 حد السبام (رسائل/5ث)</label><input type="number" name="spam_limit" value="{{ bot_config.spam_limit }}" required></div>
+        <div><label>⏱️ مدة التايم أوت (دقائق)</label><input type="number" name="spam_timeout_minutes" value="{{ bot_config.spam_timeout_minutes }}" required></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px; padding:14px; background:rgba(0,212,255,.04); border:1px solid var(--border); border-radius:12px;">
+        <input type="checkbox" name="auto_responder_enabled" id="ar-toggle" {% if bot_config.auto_responder_enabled %}checked{% endif %} style="width:20px; height:20px; cursor:pointer;">
+        <label for="ar-toggle" style="margin:0; cursor:pointer; font-size:15px;">🤖 تفعيل نظام الردود التلقائية</label>
+      </div>
+      <button type="submit" class="btn">💾 حفظ الإعدادات</button>
+    </form>
+  </div>
+
+</div>
+
+<script>
+function showSection(id, el){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  el.classList.add('active');
+  if(window.innerWidth<900) document.querySelector('.sidebar').classList.remove('open');
+}
+function showTab(parent, name, el){
+  const root = document.getElementById(parent);
+  root.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  root.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById(parent+'-'+name).classList.add('active');
+}
+async function searchMembers(q){
+  const box = document.getElementById('search-results');
+  if(!q || q.length<2){ box.innerHTML=''; return; }
+  const res = await fetch('/api/search_members?q='+encodeURIComponent(q));
+  const data = await res.json();
+  if(!data.results.length){ box.innerHTML='<div class="empty">لا نتائج</div>'; return; }
+  let html = '<div class="table-wrap"><table><thead><tr><th>العضو</th><th>الآيدي</th><th>الرصيد</th><th>تحذيرات</th></tr></thead><tbody>';
+  data.results.forEach(m=>{
+    html += `<tr><td><div class="member-row"><img src="${m.avatar}" class="avatar-sm"><span>${m.name}</span></div></td>
+    <td><code style="font-size:12px">${m.id}</code></td>
+    <td><span class="badge badge-success">💰 ${m.balance}</span></td>
+    <td><span class="badge badge-warn">⚠️ ${m.warnings}</span></td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  box.innerHTML = html;
+}
+function roleAction(action){
+  const m = document.getElementById('role-member-id').value.trim();
+  if(!m){ alert('ادخل آيدي العضو'); return; }
+  document.getElementById('r-member').value = m;
+  document.getElementById('r-role').value = document.getElementById('role-id').value;
+  document.getElementById('r-action').value = action;
+  document.getElementById('role-form').submit();
+}
+// Live ping update
+setInterval(async()=>{
+  try{
+    const r = await fetch('/api/live_stats');
+    const d = await r.json();
+    document.getElementById('live-ping').textContent = d.ping;
+    const ov = document.getElementById('ov-ping');
+    if(ov) ov.innerHTML = d.ping+'<span style="font-size:14px">ms</span>';
+  }catch(e){}
+}, 5000);
+</script>
 </body>
 </html>
